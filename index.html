@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibration Music Pro</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/4812/4812505.png">
+
+    <style>
+        body {
+            margin: 0;
+            font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0d1b2a, #1b263b, #415a77);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255,255,255,0.08);
+            padding: 40px 30px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 25px rgba(0,0,0,0.4);
+            width: 100%;
+            max-width: 450px;
+            animation: fadeIn 1.2s ease;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            font-size: 28px;
+            letter-spacing: 0.5px;
+        }
+
+        .subtitle {
+            opacity: 0.85;
+            margin-bottom: 25px;
+            font-size: 14px;
+        }
+
+        .file-label {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 14px;
+            opacity: 0.9;
+            text-align: left;
+        }
+
+        input[type="file"] {
+            background: rgba(255,255,255,0.08);
+            padding: 12px;
+            border-radius: 10px;
+            border: 2px dashed rgba(255,255,255,0.3);
+            width: 100%;
+            cursor: pointer;
+            margin-bottom: 20px;
+            color: #e0e1dd;
+        }
+
+        input[type="file"]::-webkit-file-upload-button {
+            background: rgba(255,255,255,0.15);
+            border: none;
+            padding: 8px 14px;
+            border-radius: 8px;
+            color: #e0e1dd;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+
+        .btn {
+            padding: 14px 30px;
+            font-size: 16px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            background: #e0e1dd;
+            color: #1b263b;
+            transition: 0.25s;
+            width: 100%;
+            font-weight: 600;
+        }
+
+        .btn:hover {
+            background: #778da9;
+            color: white;
+            transform: translateY(-1px) scale(1.02);
+            box-shadow: 0 8px 18px rgba(0,0,0,0.35);
+        }
+
+        .status {
+            margin-top: 18px;
+            font-size: 13px;
+            opacity: 0.85;
+        }
+
+        .status span {
+            font-weight: 600;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+    <h1>Vibration Music Pro</h1>
+    <p class="subtitle">Choisis une musique MP3, puis ton téléphone vibrera en fonction des basses.</p>
+
+    <label class="file-label" for="fileInput">Fichier audio (MP3) :</label>
+    <input type="file" id="fileInput" accept="audio/mpeg">
+
+    <button class="btn" id="playBtn">Lire & Vibrer</button>
+
+    <p class="status" id="statusText">
+        Statut : <span>en attente d’un fichier…</span>
+    </p>
+
+    <audio id="audio" style="display:none;"></audio>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const playBtn = document.getElementById('playBtn');
+    const audio = document.getElementById('audio');
+    const statusText = document.getElementById('statusText').querySelector('span');
+
+    let audioContext, analyser, dataArray, sourceNode, vibrationInterval;
+    let isPlaying = false;
+
+    function canVibrate() {
+        return "vibrate" in navigator;
+    }
+
+    function getBassLevel(array) {
+        let bass = 0;
+        const bassCount = 40;
+        for (let i = 0; i < bassCount; i++) {
+            bass += array[i];
+        }
+        return bass / bassCount;
+    }
+
+    function startVibrationLoop() {
+        if (!canVibrate()) {
+            statusText.textContent = "Vibration non supportée sur cet appareil.";
+            return;
+        }
+
+        vibrationInterval = setInterval(() => {
+            analyser.getByteFrequencyData(dataArray);
+            const bass = getBassLevel(dataArray);
+
+            if (bass > 120) {
+                navigator.vibrate(100);
+            }
+        }, 120);
+    }
+
+    function stopVibrationLoop() {
+        if (vibrationInterval) {
+            clearInterval(vibrationInterval);
+            vibrationInterval = null;
+        }
+        navigator.vibrate(0);
+    }
+
+    playBtn.addEventListener("click", async () => {
+        const file = fileInput.files[0];
+
+        if (!file) {
+            alert("Choisis d'abord un fichier MP3.");
+            return;
+        }
+
+        if (!isPlaying) {
+            const url = URL.createObjectURL(file);
+            audio.src = url;
+
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            if (sourceNode) {
+                sourceNode.disconnect();
+            }
+
+            sourceNode = audioContext.createMediaElementSource(audio);
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            sourceNode.connect(analyser);
+            analyser.connect(audioContext.destination);
+
+            if (audioContext.state === "suspended") {
+                await audioContext.resume();
+            }
+
+            audio.play();
+            isPlaying = true;
+            playBtn.textContent = "Pause & Stop Vibrations";
+            statusText.textContent = "lecture en cours + vibrations…";
+
+            startVibrationLoop();
+        } else {
+            audio.pause();
+            audio.currentTime = 0;
+            isPlaying = false;
+            playBtn.textContent = "Lire & Vibrer";
+            statusText.textContent = "en pause.";
+            stopVibrationLoop();
+        }
+    });
+
+    audio.addEventListener("ended", () => {
+        isPlaying = false;
+        playBtn.textContent = "Lire & Vibrer";
+        statusText.textContent = "lecture terminée.";
+        stopVibrationLoop();
+    });
+
+    audio.addEventListener("pause", () => {
+        if (!audio.ended) {
+            isPlaying = false;
+            playBtn.textContent = "Lire & Vibrer";
+            statusText.textContent = "en pause.";
+            stopVibrationLoop();
+        }
+    });
+</script>
+
+</body>
+</html>
